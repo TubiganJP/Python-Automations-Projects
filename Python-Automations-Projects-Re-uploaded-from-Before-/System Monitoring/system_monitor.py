@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 import psutil
-
+from notification_manager import NotificationManager
 
 # Monitoring settings
 MONITOR_INTERVAL = 5
@@ -27,6 +27,9 @@ MONITOR_PROCESSES = True
 SAVE_LOGS = True
 SHOW_ALERTS = True
 
+# Desktop notification settings
+SHOW_DESKTOP_NOTIFICATIONS = True
+NOTIFICATION_COOLDOWN = 300
 
 # Log file paths
 SYSTEM_LOG = LOG_FOLDER / "system_metrics.csv"
@@ -169,27 +172,60 @@ def get_process_info():
 
 
 # Check resource usage against configured thresholds
-def check_thresholds(cpu_info, memory_info, disks):
-    if not SHOW_ALERTS:
-        return
 
-    if MONITOR_CPU and cpu_info["usage"] >= CPU_THRESHOLD:
-        print(
-            f"WARNING: CPU usage is high: {cpu_info['usage']}%"
-        )
+# Check resource usage against configured thresholds
+def check_thresholds(cpu_info, memory_info, disks,
+                     notification_manager=None):
 
-    if MONITOR_RAM and memory_info["percentage"] >= RAM_THRESHOLD:
-        print(
-            f"WARNING: RAM usage is high: {memory_info['percentage']}%"
-        )
+    # Check CPU usage
+    if MONITOR_CPU:
+        cpu_usage = cpu_info["usage"]
 
+        if cpu_usage >= CPU_THRESHOLD:
+            if SHOW_ALERTS:
+                print(f"WARNING: CPU usage is high: {cpu_usage}%")
+
+            if SHOW_DESKTOP_NOTIFICATIONS and notification_manager:
+                notification_manager.check_threshold(
+                    "CPU",
+                    cpu_usage,
+                    CPU_THRESHOLD
+                )
+
+    # Check RAM usage
+    if MONITOR_RAM:
+        ram_usage = memory_info["percentage"]
+
+        if ram_usage >= RAM_THRESHOLD:
+            if SHOW_ALERTS:
+                print(f"WARNING: RAM usage is high: {ram_usage}%")
+
+            if SHOW_DESKTOP_NOTIFICATIONS and notification_manager:
+                notification_manager.check_threshold(
+                    "RAM",
+                    ram_usage,
+                    RAM_THRESHOLD
+                )
+
+    # Check disk usage
     if MONITOR_DISK:
         for disk in disks:
-            if disk["percentage"] >= DISK_THRESHOLD:
-                print(
-                    f"WARNING: Disk {disk['drive']} usage is high: "
-                    f"{disk['percentage']}%"
-                )
+            disk_usage = disk["percentage"]
+
+            if disk_usage >= DISK_THRESHOLD:
+                if SHOW_ALERTS:
+                    print(
+                        f"WARNING: Disk {disk['drive']} usage is high: "
+                        f"{disk_usage}%"
+                    )
+
+                if SHOW_DESKTOP_NOTIFICATIONS and notification_manager:
+                    notification_manager.check_threshold(
+                        f"Disk {disk['drive']}",
+                        disk_usage,
+                        DISK_THRESHOLD
+                    )
+
 
 
 # Save system statistics to CSV
@@ -370,6 +406,10 @@ def main():
 
     system_info = get_system_info()
 
+    # Initialize desktop notifications
+    notification_manager = ( NotificationManager(cooldown=NOTIFICATION_COOLDOWN)
+    if SHOW_DESKTOP_NOTIFICATIONS else None)
+
     previous_network = None
     previous_time = None
 
@@ -407,8 +447,8 @@ def main():
                 top_memory
             )
 
-            if MONITOR_CPU or MONITOR_RAM or MONITOR_DISK:
-                check_thresholds(cpu_info, memory_info, disks)
+            if MONITOR_CPU or MONITOR_RAM or MONITOR_DISK: check_thresholds( cpu_info,
+                memory_info, disks, notification_manager )
 
             save_system_log(
                 timestamp,
